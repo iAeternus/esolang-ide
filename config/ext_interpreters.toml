@@ -1,0 +1,9 @@
+[interpreters.stk]
+name = "STK"
+exe_path = "F:\\Develop\\esolang\\stk\\cmake-build-debug\\stk.exe"
+file_extensions = [".stk"]
+
+[interpreters.brainfuck]
+name = "Brainfuck"
+exe_path = "todo"
+file_extensions = [".bf", ".b"]

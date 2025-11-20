@@ -1,8 +1,12 @@
+use std::error::Error;
+
 use anyhow::Result;
 use eframe::{NativeOptions, run_native};
-use esolang_ide::ui;
+use esolang_ide::{UiApp, load_config};
 
-fn main() -> Result<(), eframe::Error> {
+fn main() -> Result<(), Box<dyn Error>> {
+    let config = load_config()?;
+
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1000.0, 700.0]),
         ..Default::default()
@@ -11,6 +15,8 @@ fn main() -> Result<(), eframe::Error> {
     run_native(
         "EsolangIDE",
         options,
-        Box::new(|cc| Ok(Box::new(ui::UiApp::new(cc)))),
-    )
+        Box::new(|cc| Ok(Box::new(UiApp::new(config, cc)))),
+    )?;
+
+    Ok(())
 }

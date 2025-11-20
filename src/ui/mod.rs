@@ -2,7 +2,10 @@ mod breakpoint;
 mod editor;
 mod terminal;
 
-use crate::core::{DebugSession, DebugState, ExternalInterpreter, Interpreter, RunRequest};
+use crate::{
+    ExtInterpreterConfig,
+    core::{DebugSession, DebugState, ExternalInterpreter, Interpreter, RunRequest},
+};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -18,6 +21,9 @@ pub struct UiApp {
     debug_session: Option<Box<dyn DebugSession>>,
     bp_manager: BreakpointManager,
     terminal: Terminal,
+    config: ExtInterpreterConfig,
+    available_languages: Vec<(String, String)>,
+    selected_language: Option<String>,
 }
 
 impl eframe::App for UiApp {
@@ -32,30 +38,149 @@ impl eframe::App for UiApp {
 }
 
 impl UiApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(config: ExtInterpreterConfig, _cc: &eframe::CreationContext<'_>) -> Self {
+        let available_languages = config.available_languages();
+        let default_language = available_languages.get(0).map(|(id, _)| id.clone());
+        let interpreter = Self::create_interpreter(&config, default_language.as_ref());
+
         Self {
             editor: EditorView::default(),
-            interpreter: Arc::new(Mutex::new(Box::new(ExternalInterpreter::new(
-                "F:\\Develop\\esolang\\stk\\cmake-build-debug\\stk.exe".to_string(), // TODO
-            )))),
+            interpreter: Arc::new(Mutex::new(interpreter)),
             last_run_output: String::new(),
             last_debug_state: None,
             debug_session: None,
             bp_manager: BreakpointManager::new(),
             terminal: Terminal::new(),
+            config: config.clone(),
+            available_languages,
+            selected_language: default_language,
         }
+    }
+
+    fn show_left_panel(&mut self, ui: &mut egui::Ui) {
+        egui::SidePanel::left("left_panel")
+            .resizable(false)
+            .max_width(ui.available_width() * 0.25)
+            .show_inside(ui, |ui| {
+                ui.vertical(|ui| {
+                    self.show_language_selector(ui);
+                    ui.add_space(8.0);
+                    self.show_controls(ui);
+                    ui.add_space(8.0);
+                    self.show_debug_state(ui);
+                    ui.add_space(8.0);
+                    self.show_breakpoints(ui);
+                });
+            });
+    }
+
+    fn show_right_panel(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.vertical(|ui| {
+                self.show_editor(ui);
+                ui.add_space(8.0);
+                self.terminal.ui(ui);
+
+                if let Some(input) = self.terminal.take_input() {
+                    self.terminal.push_output(format!("> {}", input));
+                    self.run_with_input(input);
+                }
+            });
+        });
+    }
+
+    fn create_interpreter(
+        config: &ExtInterpreterConfig,
+        language_id: Option<&String>,
+    ) -> Box<dyn Interpreter> {
+        language_id
+            .and_then(|id| config.get(id))
+            .map(|cfg| {
+                Box::new(ExternalInterpreter::new(cfg.exe_path.clone())) as Box<dyn Interpreter>
+            })
+            .unwrap_or_else(|| Box::new(ExternalInterpreter::new("".to_string())))
     }
 
     fn show_top_panel(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("EsolangIDE");
-                if ui.button("Load File").clicked() {
-                    self.editor
-                        .set_text(include_str!("../../examples/test_demo.txt")); // TODO
-                }
+                self.show_load_file_button(ui);
             });
         });
+    }
+
+    fn show_load_file_button(&mut self, ui: &mut egui::Ui) {
+        if ui.button("Load File").clicked() {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("All files", &["*"])
+                .pick_file()
+            {
+                match std::fs::read_to_string(&path) {
+                    Ok(content) => {
+                        self.editor.set_text(&content);
+                        self.terminal
+                            .push_output(format!("Loaded file: {}", path.display()));
+                    }
+                    Err(e) => {
+                        self.terminal
+                            .push_output(format!("Error loading file: {}", e));
+                    }
+                }
+            }
+        }
+    }
+
+    fn show_language_selector(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.set_min_width(ui.available_width());
+            ui.label("Language:");
+
+            let old_language = self.selected_language.clone();
+            let mut current_language = self.selected_language.clone();
+
+            let selected_text = current_language
+                .as_ref()
+                .and_then(|lang_id| {
+                    self.available_languages
+                        .iter()
+                        .find(|(id, _)| id == lang_id)
+                        .map(|(_, name)| name.clone())
+                })
+                .unwrap_or_else(|| "Select language".to_string());
+
+            egui::ComboBox::from_id_salt("language_selector")
+                .width(150.0)
+                .selected_text(selected_text)
+                .show_ui(ui, |ui| {
+                    for (lang_id, lang_name) in &self.available_languages {
+                        ui.selectable_value(
+                            &mut current_language,
+                            Some(lang_id.clone()),
+                            lang_name,
+                        );
+                    }
+                });
+
+            if current_language != old_language {
+                self.selected_language = current_language;
+                self.update_interpreter();
+            }
+        });
+    }
+
+    fn update_interpreter(&mut self) {
+        let new_interpreter =
+            Self::create_interpreter(&self.config, self.selected_language.as_ref());
+
+        if let Ok(mut guard) = self.interpreter.lock() {
+            *guard = new_interpreter;
+        }
+
+        if let Some(lang_id) = &self.selected_language {
+            self.terminal
+                .push_output(format!("Updated interpreter to: {}", lang_id));
+        }
     }
 
     fn show_controls(&mut self, ui: &mut egui::Ui) {
@@ -193,36 +318,6 @@ impl UiApp {
 
     fn show_breakpoints(&mut self, ui: &mut egui::Ui) {
         self.bp_manager.ui(ui);
-    }
-
-    fn show_right_panel(&mut self, ui: &mut egui::Ui) {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.vertical(|ui| {
-                self.show_editor(ui);
-                ui.add_space(8.0);
-                self.terminal.ui(ui);
-
-                if let Some(input) = self.terminal.take_input() {
-                    self.terminal.push_output(format!("> {}", input));
-                    self.run_with_input(input);
-                }
-            });
-        });
-    }
-
-    fn show_left_panel(&mut self, ui: &mut egui::Ui) {
-        egui::SidePanel::left("left_panel")
-            .resizable(false)
-            .max_width(ui.available_width() * 0.25)
-            .show_inside(ui, |ui| {
-                ui.vertical(|ui| {
-                    self.show_controls(ui);
-                    ui.add_space(8.0);
-                    self.show_debug_state(ui);
-                    ui.add_space(8.0);
-                    self.show_breakpoints(ui);
-                });
-            });
     }
 
     fn show_editor(&mut self, ui: &mut egui::Ui) {

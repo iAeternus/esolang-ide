@@ -1,5 +1,5 @@
-mod interpreter;
 mod external_interpreter;
+mod interpreter;
 
-pub use interpreter::{Interpreter, DebugSession, RunRequest, RunResult, DebugState, CodeLine};
 pub use external_interpreter::ExternalInterpreter;
+pub use interpreter::{CodeLine, DebugSession, DebugState, Interpreter, RunRequest, RunResult};
