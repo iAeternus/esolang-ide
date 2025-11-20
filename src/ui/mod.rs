@@ -2,22 +2,22 @@ mod breakpoint;
 mod editor;
 mod terminal;
 
-use crate::core::{DebugState, ExternalInterpreter, Interpreter, RunRequest};
+use crate::core::{DebugSession, DebugState, ExternalInterpreter, Interpreter, RunRequest};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
 use breakpoint::BreakpointManager;
 use editor::EditorView;
-// use terminal::Terminal;
+use terminal::Terminal;
 
 pub struct UiApp {
     editor: EditorView,
     interpreter: Arc<Mutex<Box<dyn Interpreter>>>,
     last_run_output: String,
     last_debug_state: Option<DebugState>,
-    debug_session: Option<Box<dyn crate::core::DebugSession>>,
+    debug_session: Option<Box<dyn DebugSession>>,
     bp_manager: BreakpointManager,
-    // terminal: Terminal,
+    terminal: Terminal,
 }
 
 impl eframe::App for UiApp {
@@ -25,8 +25,8 @@ impl eframe::App for UiApp {
         self.show_top_panel(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.show_right_panel(ui);
             self.show_left_panel(ui);
+            self.show_right_panel(ui);
         });
     }
 }
@@ -42,7 +42,7 @@ impl UiApp {
             last_debug_state: None,
             debug_session: None,
             bp_manager: BreakpointManager::new(),
-            // terminal: Terminal::new(),
+            terminal: Terminal::new(),
         }
     }
 
@@ -126,19 +126,8 @@ impl UiApp {
     }
 
     fn run_code(&mut self) {
-        let code = self.editor.get_text();
-        let req = RunRequest {
-            code,
-            input: Vec::new(), // TODO
-        };
-        match self.interpreter.lock().unwrap().run(req) {
-            Ok(res) => {
-                self.last_run_output = String::from_utf8_lossy(&res.stdout).to_string();
-            }
-            Err(e) => {
-                self.last_run_output = format!("Run error: {}", e);
-            }
-        }
+        self.terminal.push_output("Please input:");
+        self.terminal.request_input();
     }
 
     fn start_debug_session(&mut self) {
@@ -207,7 +196,22 @@ impl UiApp {
     }
 
     fn show_right_panel(&mut self, ui: &mut egui::Ui) {
-        egui::SidePanel::right("right_panel")
+        egui::CentralPanel::default().show_inside(ui, |ui| {
+            ui.vertical(|ui| {
+                self.show_editor(ui);
+                ui.add_space(8.0);
+                self.terminal.ui(ui);
+
+                if let Some(input) = self.terminal.take_input() {
+                    self.terminal.push_output(format!("> {}", input));
+                    self.run_with_input(input);
+                }
+            });
+        });
+    }
+
+    fn show_left_panel(&mut self, ui: &mut egui::Ui) {
+        egui::SidePanel::left("left_panel")
             .resizable(false)
             .max_width(ui.available_width() * 0.25)
             .show_inside(ui, |ui| {
@@ -221,16 +225,6 @@ impl UiApp {
             });
     }
 
-    fn show_left_panel(&mut self, ui: &mut egui::Ui) {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.vertical(|ui| {
-                self.show_editor(ui);
-                ui.add_space(8.0);
-                self.show_output(ui);
-            });
-        });
-    }
-
     fn show_editor(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.label("Editor");
@@ -242,17 +236,22 @@ impl UiApp {
         });
     }
 
-    fn show_output(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.label("Output");
-            ui.vertical(|ui| {
-                ui.add_sized(
-                    [ui.available_width(), 150.0],
-                    egui::TextEdit::multiline(&mut self.last_run_output)
-                        .interactive(false)
-                        .lock_focus(true),
-                );
-            });
-        });
+    fn run_with_input(&mut self, input: String) {
+        let code = self.editor.get_text();
+
+        let req = RunRequest {
+            code,
+            input: input.into_bytes(),
+        };
+
+        match self.interpreter.lock().unwrap().run(req) {
+            Ok(res) => {
+                self.terminal
+                    .push_output(String::from_utf8_lossy(&res.stdout).to_string());
+            }
+            Err(e) => {
+                self.terminal.push_output(format!("Run error: {}", e));
+            }
+        }
     }
 }

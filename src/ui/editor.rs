@@ -57,6 +57,7 @@ impl EditorView {
             .with_syntax(Syntax::rust())
             .with_numlines(true)
             .with_theme(GRUVBOX_DARK)
+            .with_fontsize(16.0)
             .with_rows(32)
             .show_with_completer(ui, &mut self.text, &mut Completer::default()); // TODO
     }
