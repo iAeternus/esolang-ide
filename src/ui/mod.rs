@@ -1,10 +1,14 @@
-pub mod editor;
+mod breakpoint;
+mod editor;
+mod terminal;
 
 use crate::core::{DebugState, ExternalInterpreter, Interpreter, RunRequest};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
+use breakpoint::BreakpointManager;
 use editor::EditorView;
+// use terminal::Terminal;
 
 pub struct UiApp {
     editor: EditorView,
@@ -12,7 +16,8 @@ pub struct UiApp {
     last_run_output: String,
     last_debug_state: Option<DebugState>,
     debug_session: Option<Box<dyn crate::core::DebugSession>>,
-    breakpoints: Vec<usize>,
+    bp_manager: BreakpointManager,
+    // terminal: Terminal,
 }
 
 impl eframe::App for UiApp {
@@ -31,12 +36,13 @@ impl UiApp {
         Self {
             editor: EditorView::default(),
             interpreter: Arc::new(Mutex::new(Box::new(ExternalInterpreter::new(
-                "todo".to_string(),
+                "F:\\Develop\\esolang\\stk\\cmake-build-debug\\stk.exe".to_string(), // TODO
             )))),
             last_run_output: String::new(),
             last_debug_state: None,
             debug_session: None,
-            breakpoints: Vec::new(),
+            bp_manager: BreakpointManager::new(),
+            // terminal: Terminal::new(),
         }
     }
 
@@ -46,7 +52,7 @@ impl UiApp {
                 ui.heading("EsolangIDE");
                 if ui.button("Load File").clicked() {
                     self.editor
-                        .set_text(include_str!("../../examples/test_demo.txt"));
+                        .set_text(include_str!("../../examples/test_demo.txt")); // TODO
                 }
             });
         });
@@ -123,7 +129,7 @@ impl UiApp {
         let code = self.editor.get_text();
         let req = RunRequest {
             code,
-            input: Vec::new(),
+            input: Vec::new(), // TODO
         };
         match self.interpreter.lock().unwrap().run(req) {
             Ok(res) => {
@@ -163,7 +169,7 @@ impl UiApp {
 
     fn resume_debug(&mut self) {
         if let Some(session) = self.debug_session.as_mut() {
-            match session.resume_until_breakpoint(&self.breakpoints) {
+            match session.resume_until_breakpoint(&self.bp_manager.breakpoints()) {
                 Ok(state) => {
                     self.last_debug_state = Some(state);
                 }
@@ -197,58 +203,7 @@ impl UiApp {
     }
 
     fn show_breakpoints(&mut self, ui: &mut egui::Ui) {
-        ui.group(|ui| {
-            ui.set_min_width(ui.available_width());
-            ui.set_max_width(ui.available_width());
-            ui.label("Breakpoints");
-            self.show_add_breakpoint(ui);
-            ui.add_space(6.0);
-            self.show_breakpoint_list(ui);
-        });
-    }
-
-    fn show_add_breakpoint(&mut self, ui: &mut egui::Ui) {
-        let mut to_add = String::new();
-        ui.horizontal(|ui| {
-            ui.label("Add bp idx:");
-            let text_width = ui.available_width() - 50.0;
-            ui.add(egui::TextEdit::singleline(&mut to_add).desired_width(text_width));
-            if ui.button("Add").clicked() {
-                if let Ok(idx) = to_add.trim().parse::<usize>() {
-                    self.breakpoints.push(idx);
-                }
-            }
-        });
-    }
-
-    fn show_breakpoint_list(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.label("Current breakpoints");
-            let mut to_remove = Vec::new();
-
-            egui::ScrollArea::vertical()
-                .max_height(60.0)
-                .show(ui, |ui| {
-                    if self.breakpoints.is_empty() {
-                        ui.label("No breakpoints set");
-                    } else {
-                        for (i, bp) in self.breakpoints.iter().enumerate() {
-                            ui.horizontal(|ui| {
-                                ui.label(format!("{}", bp));
-                                if ui.small_button("×").clicked() {
-                                    to_remove.push(i);
-                                }
-                            });
-                        }
-                    }
-                });
-
-            for &index in to_remove.iter().rev() {
-                if index < self.breakpoints.len() {
-                    self.breakpoints.remove(index);
-                }
-            }
-        });
+        self.bp_manager.ui(ui);
     }
 
     fn show_right_panel(&mut self, ui: &mut egui::Ui) {
@@ -291,14 +246,11 @@ impl UiApp {
         ui.group(|ui| {
             ui.label("Output");
             ui.vertical(|ui| {
-egui::TextEdit::multiline(&mut self.last_run_output)
-                        .desired_width(f32::INFINITY)
-                        .lock_focus(true)
-
-
                 ui.add_sized(
                     [ui.available_width(), 150.0],
-                    ,
+                    egui::TextEdit::multiline(&mut self.last_run_output)
+                        .interactive(false)
+                        .lock_focus(true),
                 );
             });
         });
