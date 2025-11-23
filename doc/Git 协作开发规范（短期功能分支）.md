@@ -91,8 +91,8 @@ git push -u origin feature/功能描述
 ### 完成功能并合并到 develop
 
 ```bash
-git checkout feature/功能描述
-git pull origin feature/功能描述
+git checkout develop
+git pull origin develop
 ```
 
 通过 Pull Request 合并：
