@@ -1,9 +1,14 @@
 [interpreters.stk]
 name = "STK"
-exe_path = "F:\\Develop\\esolang\\stk\\cmake-build-debug\\stk.exe"
+exe_path = "F:\\Develop\\esolang\\StackStackStack\\bin\\ststst\\ststst.exe"
 file_extensions = [".stk"]
 
 [interpreters.brainfuck]
 name = "Brainfuck"
 exe_path = "todo"
 file_extensions = [".bf", ".b"]
+
+[interpreters.tree]
+name = "Tree"
+exe_path = "F:\\Develop\\esolang\\StackStackStack\\bin\\tree\\tree.exe"
+file_extensions = [".tree"]
