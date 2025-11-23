@@ -1,11 +1,16 @@
 //! 外部解释器调用
 
+use std::os::windows::process::CommandExt;
 use std::{
     io::Write,
     process::{Command, Stdio},
 };
 
-use crate::core::{DebugSession, Interpreter, RunRequest, RunResult, interpreter::RunMetrics};
+use crate::CREATE_NO_WINDOW;
+use crate::{
+    core::{DebugSession, Interpreter, RunRequest, RunResult, interpreter::RunMetrics},
+    utils::decode_output,
+};
 use anyhow::Result;
 use tempfile::NamedTempFile;
 
@@ -33,20 +38,24 @@ impl Interpreter for ExternalInterpreter {
         input_file.write_all(&req.input)?;
         let input_path = input_file.path().to_str().unwrap().to_string();
 
+        // 启动外部解释器
         let child = Command::new(&self.exe_path)
-            .arg(&code_path) // 代码文件路径
-            .arg(&input_path) // 输入文件路径
+            .arg(&code_path)
+            .arg(&input_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()?;
 
         let output = child.wait_with_output()?;
 
-        // 临时文件会在离开作用域后自动删除
+        // 解码 stdout / stderr
+        let stdout = decode_output(output.stdout);
+        let stderr = decode_output(output.stderr);
 
         Ok(RunResult {
-            stdout: output.stdout,
-            stderr: output.stderr,
+            stdout: stdout.into_bytes(),
+            stderr: stderr.into_bytes(),
             exit_code: Some(output.status.code().unwrap_or(-1)),
             metrics: RunMetrics::default(),
         })
@@ -65,7 +74,7 @@ mod tests {
     fn should_call_external_interpreter_with_files() -> anyhow::Result<()> {
         // Given
         let mut ei = ExternalInterpreter::new(
-            "F:\\Develop\\esolang\\stk\\cmake-build-debug\\stk.exe".to_string(),
+            "F:\\Develop\\esolang\\StackStackStack\\bin\\ststst\\ststst.exe".to_string(),
         );
         let req = RunRequest {
             code: "INPUT INPUT SUB OUTPUT".to_string(),
@@ -80,8 +89,8 @@ mod tests {
         println!("stderr: {:?}", String::from_utf8_lossy(&res.stderr));
         println!("exit_code: {:?}", res.exit_code);
 
-        let output = String::from_utf8_lossy(&res.stdout);
-        assert!(output.trim().contains("-5"));
+        let out = String::from_utf8_lossy(&res.stdout);
+        assert!(out.trim().contains("-5"));
         assert_eq!(res.exit_code, Some(0));
 
         Ok(())

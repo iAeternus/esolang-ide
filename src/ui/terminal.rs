@@ -65,6 +65,7 @@ impl Terminal {
                     ui.add_sized(
                         [available_width, ui.available_height()],
                         egui::TextEdit::multiline(&mut self.output)
+                            .font(egui::TextStyle::Monospace)
                             .interactive(false)
                             .lock_focus(true)
                             .frame(false),
