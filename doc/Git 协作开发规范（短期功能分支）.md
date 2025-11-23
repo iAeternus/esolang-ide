@@ -106,6 +106,7 @@ git pull origin develop
 
 ```shell
 git merge --no-ff feature/功能描述
+git push origin develop
 ```
 
 合并完成后清理：
