@@ -4,10 +4,12 @@ mod terminal;
 
 use crate::{
     ExtInterpreterConfig,
-    core::{DebugSession, DebugState, ExternalInterpreter, Interpreter, RunRequest},
+    core::{
+        DebugSession, DebugState, ExternalInterpreter, Interpreter, RunRequest, UiMsg,
+        WorkerHandle, WorkerMsg, start_worker,
+    },
 };
 use eframe::egui;
-use std::sync::{Arc, Mutex};
 
 use breakpoint::BreakpointManager;
 use editor::EditorView;
@@ -15,7 +17,7 @@ use terminal::Terminal;
 
 pub struct UiApp {
     editor: EditorView,
-    interpreter: Arc<Mutex<Box<dyn Interpreter>>>,
+    worker: WorkerHandle,
     last_run_output: String,
     last_debug_state: Option<DebugState>,
     debug_session: Option<Box<dyn DebugSession>>,
@@ -28,12 +30,13 @@ pub struct UiApp {
 
 impl eframe::App for UiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.recv_from_worker();
         self.show_top_panel(ctx);
-
         egui::CentralPanel::default().show(ctx, |ui| {
             self.show_left_panel(ui);
             self.show_right_panel(ui);
         });
+        ctx.request_repaint();
     }
 }
 
@@ -41,11 +44,13 @@ impl UiApp {
     pub fn new(config: ExtInterpreterConfig, _cc: &eframe::CreationContext<'_>) -> Self {
         let available_languages = config.available_languages();
         let default_language = available_languages.get(0).map(|(id, _)| id.clone());
-        let interpreter = Self::create_interpreter(&config, default_language.as_ref());
+
+        let initial_interp = Self::create_interpreter(&config, default_language.as_ref());
+        let worker = start_worker(initial_interp);
 
         Self {
             editor: EditorView::default(),
-            interpreter: Arc::new(Mutex::new(interpreter)),
+            worker,
             last_run_output: String::new(),
             last_debug_state: None,
             debug_session: None,
@@ -55,6 +60,21 @@ impl UiApp {
             available_languages,
             selected_language: default_language,
         }
+    }
+
+    fn create_interpreter(
+        config: &ExtInterpreterConfig,
+        language_id: Option<&String>,
+    ) -> Box<dyn Interpreter + Send> {
+        language_id
+            .and_then(|id| config.get(id))
+            .map(|cfg| {
+                Box::new(ExternalInterpreter::new(cfg.exe_path.clone()))
+                    as Box<dyn Interpreter + Send>
+            })
+            .unwrap_or_else(|| {
+                Box::new(ExternalInterpreter::new("".to_string())) as Box<dyn Interpreter + Send>
+            })
     }
 
     fn show_left_panel(&mut self, ui: &mut egui::Ui) {
@@ -87,18 +107,6 @@ impl UiApp {
                 }
             });
         });
-    }
-
-    fn create_interpreter(
-        config: &ExtInterpreterConfig,
-        language_id: Option<&String>,
-    ) -> Box<dyn Interpreter> {
-        language_id
-            .and_then(|id| config.get(id))
-            .map(|cfg| {
-                Box::new(ExternalInterpreter::new(cfg.exe_path.clone())) as Box<dyn Interpreter>
-            })
-            .unwrap_or_else(|| Box::new(ExternalInterpreter::new("".to_string())))
     }
 
     fn show_top_panel(&mut self, ctx: &egui::Context) {
@@ -170,17 +178,11 @@ impl UiApp {
     }
 
     fn update_interpreter(&mut self) {
-        let new_interpreter =
-            Self::create_interpreter(&self.config, self.selected_language.as_ref());
-
-        if let Ok(mut guard) = self.interpreter.lock() {
-            *guard = new_interpreter;
-        }
-
-        if let Some(lang_id) = &self.selected_language {
-            self.terminal
-                .push_output(format!("Updated interpreter to: {}", lang_id));
-        }
+        let new_interp = Self::create_interpreter(&self.config, self.selected_language.as_ref());
+        let _ = self
+            .worker
+            .to_worker
+            .send(WorkerMsg::UpdateInterpreter(new_interp));
     }
 
     fn show_controls(&mut self, ui: &mut egui::Ui) {
@@ -257,15 +259,7 @@ impl UiApp {
 
     fn start_debug_session(&mut self) {
         let code = self.editor.get_text();
-        match self.interpreter.lock().unwrap().start_debug(code) {
-            Ok(session) => {
-                self.debug_session = Some(session);
-                self.last_debug_state = self.debug_session.as_ref().map(|s| s.current_state());
-            }
-            Err(e) => {
-                self.last_run_output = format!("Start debug error: {}", e);
-            }
-        }
+        let _ = self.worker.to_worker.send(WorkerMsg::StartDebug(code));
     }
 
     fn step_debug(&mut self) {
@@ -332,20 +326,41 @@ impl UiApp {
     }
 
     fn run_with_input(&mut self, input: String) {
-        let code = self.editor.get_text();
-
         let req = RunRequest {
-            code,
+            code: self.editor.get_text(),
             input: input.into_bytes(),
         };
 
-        match self.interpreter.lock().unwrap().run(req) {
-            Ok(res) => {
-                self.terminal
-                    .push_output(String::from_utf8_lossy(&res.stdout).to_string());
-            }
-            Err(e) => {
-                self.terminal.push_output(format!("Run error: {}", e));
+        let _ = self.worker.to_worker.send(WorkerMsg::Run(req));
+    }
+
+    /// 接收工作线程执行结果，并处理消息
+    fn recv_from_worker(&mut self) {
+        while let Ok(msg) = self.worker.from_worker.try_recv() {
+            match msg {
+                UiMsg::RunFinished(result) => {
+                    self.terminal
+                        .push_output(String::from_utf8_lossy(&result.stdout).to_string());
+                }
+                UiMsg::RunError(err) => {
+                    self.terminal.push_output(format!("Run error: {}", err));
+                }
+                UiMsg::DebugStarted(session) => match session {
+                    Ok(session) => {
+                        self.debug_session = Some(session);
+                        self.last_debug_state =
+                            self.debug_session.as_ref().map(|s| s.current_state());
+                    }
+                    Err(e) => {
+                        self.last_run_output = format!("Start debug error: {}", e);
+                    }
+                },
+                UiMsg::InterpreterUpdated => {
+                    self.terminal.push_output(format!(
+                        "The interpreter has been changed to: {}.",
+                        self.selected_language.clone().unwrap() // 这里的Option一定是Some
+                    ));
+                }
             }
         }
     }

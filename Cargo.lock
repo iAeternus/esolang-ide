@@ -1174,10 +1174,12 @@ name = "esolang-ide"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "config",
  "eframe",
  "egui",
  "egui_code_editor",
+ "encoding_rs",
  "rfd",
  "serde",
  "serde_json",
