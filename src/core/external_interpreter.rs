@@ -15,6 +15,7 @@ use anyhow::Result;
 use tempfile::NamedTempFile;
 
 /// 外部解释器
+#[derive(Debug)]
 pub struct ExternalInterpreter {
     /// 解释器exe路径
     pub exe_path: String,

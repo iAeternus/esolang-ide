@@ -3,5 +3,5 @@ mod interpreter;
 mod worker;
 
 pub use external_interpreter::ExternalInterpreter;
-pub use interpreter::{CodeLine, DebugSession, DebugState, Interpreter, RunRequest, RunResult};
+pub use interpreter::*;
 pub use worker::*;

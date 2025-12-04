@@ -5,8 +5,8 @@ mod terminal;
 use crate::{
     ExtInterpreterConfig,
     core::{
-        DebugSession, DebugState, ExternalInterpreter, Interpreter, RunRequest, UiMsg,
-        WorkerHandle, WorkerMsg, start_worker,
+        DebugSession, DebugState, ExternalInterpreter, FromWorkerMsg, Interpreter, RunRequest,
+        ToWorkerMsg, WorkerHandle,
     },
 };
 use eframe::egui;
@@ -46,7 +46,8 @@ impl UiApp {
         let default_language = available_languages.get(0).map(|(id, _)| id.clone());
 
         let initial_interp = Self::create_interpreter(&config, default_language.as_ref());
-        let worker = start_worker(initial_interp);
+        // let worker = start_worker(initial_interp);
+        let worker = WorkerHandle::spawn(initial_interp);
 
         Self {
             editor: EditorView::default(),
@@ -182,7 +183,7 @@ impl UiApp {
         let _ = self
             .worker
             .to_worker
-            .send(WorkerMsg::UpdateInterpreter(new_interp));
+            .send(ToWorkerMsg::UpdateInterpreter(new_interp));
     }
 
     fn show_controls(&mut self, ui: &mut egui::Ui) {
@@ -259,7 +260,7 @@ impl UiApp {
 
     fn start_debug_session(&mut self) {
         let code = self.editor.get_text();
-        let _ = self.worker.to_worker.send(WorkerMsg::StartDebug(code));
+        let _ = self.worker.to_worker.send(ToWorkerMsg::StartDebug(code));
     }
 
     fn step_debug(&mut self) {
@@ -331,21 +332,21 @@ impl UiApp {
             input: input.into_bytes(),
         };
 
-        let _ = self.worker.to_worker.send(WorkerMsg::Run(req));
+        let _ = self.worker.to_worker.send(ToWorkerMsg::Run(req));
     }
 
     /// 接收工作线程执行结果，并处理消息
     fn recv_from_worker(&mut self) {
         while let Ok(msg) = self.worker.from_worker.try_recv() {
             match msg {
-                UiMsg::RunFinished(result) => {
+                FromWorkerMsg::RunFinished(result) => {
                     self.terminal
                         .push_output(String::from_utf8_lossy(&result.stdout).to_string());
                 }
-                UiMsg::RunError(err) => {
+                FromWorkerMsg::RunError(err) => {
                     self.terminal.push_output(format!("Run error: {}", err));
                 }
-                UiMsg::DebugStarted(session) => match session {
+                FromWorkerMsg::DebugStarted(session) => match session {
                     Ok(session) => {
                         self.debug_session = Some(session);
                         self.last_debug_state =
@@ -355,11 +356,14 @@ impl UiApp {
                         self.last_run_output = format!("Start debug error: {}", e);
                     }
                 },
-                UiMsg::InterpreterUpdated => {
+                FromWorkerMsg::InterpreterUpdated => {
                     self.terminal.push_output(format!(
                         "The interpreter has been changed to: {}.",
                         self.selected_language.clone().unwrap() // 这里的Option一定是Some
                     ));
+                }
+                FromWorkerMsg::WorkerShutdown => {
+                    todo!() // TODO: 处理工作线程返回消息
                 }
             }
         }
