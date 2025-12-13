@@ -104,7 +104,7 @@ impl UiApp {
 
                 if let Some(input) = self.terminal.take_input() {
                     self.terminal.push_output(format!("> {}", input));
-                    self.run_with_input(input);
+                    self.run_with_input(&input);
                 }
             });
         });
@@ -326,10 +326,10 @@ impl UiApp {
         });
     }
 
-    fn run_with_input(&mut self, input: String) {
+    fn run_with_input(&mut self, input: &str) {
         let req = RunRequest {
             code: self.editor.get_text(),
-            input: input.into_bytes(),
+            input: input.into()
         };
 
         let _ = self.worker.to_worker.send(ToWorkerMsg::Run(req));

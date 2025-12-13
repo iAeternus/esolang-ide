@@ -42,9 +42,9 @@ pub trait Interpreter: Send + Sync {
     ///
     /// ## Return
     /// 返回运行结果，用Result包装
-    fn run(&mut self, req: RunRequest) -> Result<RunResult>;
+    fn run(&mut self, req: &RunRequest) -> Result<RunResult>;
 
-    /// 开始调试
+    /// 开始调试 TODO: 该接口方法需重新设计
     ///
     /// ## Params
     /// - code: 代码

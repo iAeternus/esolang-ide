@@ -29,6 +29,14 @@ pub enum FromWorkerMsg {
     WorkerShutdown,
 }
 
+/// 工作线程处理器
+/// 
+/// ## 线程结构
+/// 主线程（UI）<br>
+/// 工作线程（worker）<br>
+///    ├─ stdin writer (I/O thread) <br>
+///    ├─ stdout reader (I/O thread) <br>
+///    └─ stderr reader (I/O thread) 
 pub struct WorkerHandle {
     pub to_worker: Sender<ToWorkerMsg>,
     pub from_worker: Receiver<FromWorkerMsg>,
@@ -71,7 +79,7 @@ impl Worker {
 
     fn handle_message(&mut self, msg: ToWorkerMsg) -> bool {
         match msg {
-            ToWorkerMsg::Run(req) => self.handle_run(req),
+            ToWorkerMsg::Run(req) => self.handle_run(&req),
             ToWorkerMsg::UpdateInterpreter(new_interp) => {
                 self.handle_update_interpreter(new_interp)
             }
@@ -85,8 +93,8 @@ impl Worker {
     }
 
     // 处理运行请求
-    fn handle_run(&mut self, req: RunRequest) {
-        match self.interpreter.run(req) {
+    fn handle_run(&mut self, req: &RunRequest) {
+        match self.interpreter.run(&req) {
             Ok(res) => {
                 let _ = self.ui_tx.send(FromWorkerMsg::RunFinished(res));
             }

@@ -1,6 +1,5 @@
 //! 外部解释器调用
 
-use std::io::{BufRead, BufReader};
 use std::os::windows::process::CommandExt;
 use std::sync::mpsc;
 use std::thread;
@@ -10,10 +9,7 @@ use std::{
 };
 
 use crate::CREATE_NO_WINDOW;
-use crate::{
-    core::{DebugSession, Interpreter, RunRequest, RunResult, interpreter::RunMetrics},
-    utils::decode_output,
-};
+use crate::core::{DebugSession, Interpreter, RunRequest, RunResult, interpreter::RunMetrics};
 use anyhow::Result;
 use tempfile::NamedTempFile;
 
@@ -36,7 +32,11 @@ impl ExternalInterpreter {
 }
 
 impl Interpreter for ExternalInterpreter {
-    fn run(&mut self, req: RunRequest) -> Result<RunResult> {
+    fn run(&mut self, req: &RunRequest) -> Result<RunResult> {
+        // // 代码临时文件
+        // let code_path = create_temp_file_with_content(req.code.as_bytes())?;
+        // // 输入临时文件
+        // let input_path = create_temp_file_with_content(&req.input)?;
         // 代码临时文件
         let mut code_file = NamedTempFile::new()?;
         code_file.write_all(req.code.as_bytes())?;
@@ -54,12 +54,14 @@ impl Interpreter for ExternalInterpreter {
 
         let stdin_thread = spawn_stdin_writer(stdin, req.input.clone());
         let (tx, rx) = mpsc::channel();
-        let _out_thread = spawn_output_reader(stdout, true, tx.clone());
-        let _err_thread = spawn_output_reader(stderr, false, tx);
+        let out_thread = spawn_output_reader(stdout, true, tx.clone());
+        let err_thread = spawn_output_reader(stderr, false, tx);
 
         let (out, err, code) = collect_process_output(&mut child, &rx)?;
 
         let _ = stdin_thread.join();
+        let _ = out_thread.join();
+        let _ = err_thread.join();
 
         Ok(RunResult {
             stdout: out,
@@ -72,6 +74,12 @@ impl Interpreter for ExternalInterpreter {
     fn start_debug(&mut self, _code: String) -> Result<Box<dyn DebugSession + Send + Sync>> {
         anyhow::bail!("Debug not implemented for external interpreter yet")
     }
+}
+
+fn create_temp_file_with_content<C: AsRef<[u8]>>(content: C) -> Result<String> {
+    let mut temp_file = NamedTempFile::new()?;
+    temp_file.write_all(content.as_ref())?;
+    Ok(temp_file.path().to_string_lossy().to_string())
 }
 
 fn spawn_process(exe: &str, code: &str, input: &str) -> Result<std::process::Child> {
@@ -98,7 +106,7 @@ fn spawn_stdin_writer(
 }
 
 fn spawn_output_reader(
-    stream: impl std::io::Read + Send + 'static,
+    mut stream: impl std::io::Read + Send + 'static,
     is_stdout: bool,
     tx: mpsc::Sender<StreamMsg>,
 ) -> thread::JoinHandle<()> {
@@ -114,7 +122,9 @@ fn spawn_output_reader(
                     } else {
                         StreamMsg::Stderr(buf[..n].to_vec())
                     };
-                    let _ = tx.send(msg);
+                    if tx.send(msg).is_err() {
+                        break; // 接收方断开时，退出线程以避免死锁
+                    }
                 }
                 Err(_) => break,
             }
@@ -135,6 +145,15 @@ fn collect_process_output(
             Ok(StreamMsg::Stderr(bytes)) => err_buf.extend_from_slice(&bytes),
 
             Err(mpsc::TryRecvError::Empty) => {
+                /*
+                TODO:
+                子进程退出并不代表 stdout/stderr 已经全部读完
+                reader thread 可能还在读缓冲区数据
+                try_recv 只能获得 已经发送到 channel 的消息
+                但 reader thread 可能还没来得及 send（因为 OS pipe 有缓冲，reader 正在 sleep 或者正在读）
+                最后几 KB 输出会丢失
+                reader thread 在 join 阶段已经无法把消息发送给 tx，因为主线程 rx 早就 return 退出函数，丢失了引用
+                 */
                 if let Some(status) = child.try_wait()? {
                     let code = status.code().unwrap_or(-1);
 
@@ -175,7 +194,7 @@ mod tests {
         };
 
         // When
-        let res = ei.run(req)?;
+        let res = ei.run(&req)?;
 
         // Then
         println!("stdout: {:?}", String::from_utf8_lossy(&res.stdout));
