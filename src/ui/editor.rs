@@ -1,45 +1,27 @@
 use eframe::egui;
-use egui_code_editor::{CodeEditor, ColorTheme, Completer, Syntax};
+use egui_code_editor::ColorTheme;
 
 #[derive(Default)]
 pub struct EditorView {
     text: String,
 }
 
-// Gruvbox 深色主题
+// Gruvbox Dark
 const GRUVBOX_DARK: ColorTheme = ColorTheme {
     name: "Gruvbox Dark",
     dark: true,
-    bg: "#282828",          // bg0
-    cursor: "#a89984",      // bg4 / gray
-    selection: "#504945",   // bg2
-    comments: "#928374",    // gray
-    functions: "#b8bb26",   // green
-    keywords: "#fb4934",    // red
-    literals: "#ebdbb2",    // fg1
-    numerics: "#d3869b",    // purple
-    punctuation: "#fe8019", // orange
-    strs: "#8ec07c",        // aqua
-    types: "#fabd2f",       // yellow
-    special: "#83a598",     // blue
-};
-
-// Gruvbox 浅色主题
-const GRUVBOX_LIGHT: ColorTheme = ColorTheme {
-    name: "Gruvbox Light",
-    dark: false,
-    bg: "#fbf1c7",          // bg0
-    cursor: "#7c6f64",      // gray
-    selection: "#b57614",   // yellow (作为选中背景)
-    comments: "#7c6f64",    // gray
-    functions: "#79740e",   // green
-    keywords: "#9d0006",    // red
-    literals: "#282828",    // fg
-    numerics: "#8f3f71",    // purple
-    punctuation: "#af3a03", // orange
-    strs: "#427b58",        // aqua
-    types: "#b57614",       // yellow
-    special: "#076678",     // blue
+    bg: "#282828",
+    cursor: "#a89984",
+    selection: "#504945",
+    comments: "#928374",
+    functions: "#b8bb26",
+    keywords: "#fb4934",
+    literals: "#ebdbb2",
+    numerics: "#d3869b",
+    punctuation: "#fe8019",
+    strs: "#8ec07c",
+    types: "#fabd2f",
+    special: "#83a598",
 };
 
 impl EditorView {
@@ -52,13 +34,22 @@ impl EditorView {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        CodeEditor::default()
-            .id_source("code_editor")
-            .with_syntax(Syntax::rust())
-            .with_numlines(true)
-            .with_theme(GRUVBOX_DARK)
-            .with_fontsize(16.0)
-            .with_rows(32)
-            .show_with_completer(ui, &mut self.text, &mut Completer::default()); // TODO
+        ui.scope(|ui| {
+            let available_height = ui.available_height().max(0.0);
+
+            let font_size = 15.0;
+            let line_height = font_size * 1.35;
+            let rows = ((available_height / line_height).floor() as usize).max(1) + 1;
+
+            egui_code_editor::CodeEditor::default()
+                .id_source("code_editor")
+                .with_syntax(egui_code_editor::Syntax::rust())
+                .with_numlines(true)
+                .with_theme(GRUVBOX_DARK)
+                .with_fontsize(font_size)
+                .with_rows(rows)
+                .auto_shrink(false)
+                .show(ui, &mut self.text);
+        });
     }
 }
