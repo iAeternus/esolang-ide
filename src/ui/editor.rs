@@ -2,7 +2,7 @@ use eframe::egui;
 use egui_code_editor::ColorTheme;
 
 #[derive(Default)]
-pub struct EditorView {
+pub struct EditorPanel {
     text: String,
 }
 
@@ -24,7 +24,7 @@ const GRUVBOX_DARK: ColorTheme = ColorTheme {
     special: "#83a598",
 };
 
-impl EditorView {
+impl EditorPanel {
     pub fn set_text(&mut self, s: &str) {
         self.text = s.to_string();
     }

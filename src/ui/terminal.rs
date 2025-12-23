@@ -1,14 +1,14 @@
 use eframe::egui;
 
 #[derive(Default)]
-pub struct TerminalView {
+pub struct TerminalPanel {
     output: String,
     input_line: String,
     allow_input: bool,
     pub pending_input: Option<String>,
 }
 
-impl TerminalView {
+impl TerminalPanel {
     pub fn request_input(&mut self) {
         self.allow_input = true;
         self.input_line.clear();

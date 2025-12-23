@@ -8,8 +8,8 @@ use std::{
     process::{Command, Stdio},
 };
 
-use crate::CREATE_NO_WINDOW;
 use crate::core::{DebugSession, Interpreter, RunRequest, RunResult, interpreter::RunMetrics};
+use crate::{CREATE_NO_WINDOW, ExtInterpreterConfig};
 use anyhow::Result;
 use tempfile::NamedTempFile;
 
@@ -28,6 +28,13 @@ pub struct ExternalInterpreter {
 impl ExternalInterpreter {
     pub fn new(exe_path: String) -> Self {
         Self { exe_path }
+    }
+
+    pub fn with_language_id(config: &ExtInterpreterConfig, language_id: Option<&String>) -> Self {
+        language_id
+            .and_then(|id| config.get(id))
+            .map(|cfg| ExternalInterpreter::new(cfg.exe_path.clone()))
+            .unwrap_or_else(|| ExternalInterpreter::new("".to_string()))
     }
 }
 

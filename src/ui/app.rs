@@ -5,32 +5,22 @@ use crate::{
         ToWorkerMsg, WorkerHandle,
     },
     ui::{
-        breakpoint::BreakpointManager, editor::EditorView, layout::LayoutState,
-        terminal::TerminalView,
+        breakpoint::BreakpointPanel, controller::AppController, editor::EditorPanel,
+        layout::LayoutState, state::AppState, terminal::TerminalPanel,
     },
 };
 use eframe::egui;
-use egui::UiBuilder;
+use egui::{UiBuilder, scroll_area::State};
 
 pub struct UiApp {
-    pub editor: EditorView,
-    pub worker: WorkerHandle,
-    pub last_run_output: String,
-    pub last_debug_state: Option<DebugState>,
-    pub debug_session: Option<Box<dyn DebugSession>>,
-    pub bp_manager: BreakpointManager,
-    pub terminal: TerminalView,
-    pub config: ExtInterpreterConfig,
-    pub available_languages: Vec<(String, String)>,
-    pub selected_language: Option<String>,
-    pub layout: LayoutState,
+    pub state: AppState,
 }
 
 impl eframe::App for UiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.recv_from_worker();
+        AppController::handle_worker_msg(&mut self.state);
         self.show_top_panel(ctx);
-        if self.layout.show_left_panel {
+        if self.state.layout.show_left_panel {
             self.show_left_panel(ctx);
         }
         self.show_central_panel(ctx);
@@ -40,39 +30,9 @@ impl eframe::App for UiApp {
 
 impl UiApp {
     pub fn new(config: ExtInterpreterConfig, _cc: &eframe::CreationContext<'_>) -> Self {
-        let available_languages = config.available_languages();
-        let default_language = available_languages.get(0).map(|(id, _)| id.clone());
-        let initial_interp = Self::create_interpreter(&config, default_language.as_ref());
-        let worker = WorkerHandle::spawn(initial_interp);
-
         Self {
-            editor: EditorView::default(),
-            worker,
-            last_run_output: String::new(),
-            last_debug_state: None,
-            debug_session: None,
-            bp_manager: BreakpointManager::new(),
-            terminal: TerminalView::default(),
-            config: config.clone(),
-            available_languages,
-            selected_language: default_language,
-            layout: LayoutState::default(),
+            state: AppState::new(config),
         }
-    }
-
-    fn create_interpreter(
-        config: &ExtInterpreterConfig,
-        language_id: Option<&String>,
-    ) -> Box<dyn Interpreter + Send> {
-        language_id
-            .and_then(|id| config.get(id))
-            .map(|cfg| {
-                Box::new(ExternalInterpreter::new(cfg.exe_path.clone()))
-                    as Box<dyn Interpreter + Send>
-            })
-            .unwrap_or_else(|| {
-                Box::new(ExternalInterpreter::new("".to_string())) as Box<dyn Interpreter + Send>
-            })
     }
 
     fn show_left_panel(&mut self, ctx: &egui::Context) {
@@ -85,10 +45,10 @@ impl UiApp {
             .resizable(true)
             .min_width(MIN_LEFT_PANEL_WIDTH)
             .max_width(max_width.max(MIN_LEFT_PANEL_WIDTH))
-            .default_width(self.layout.left_panel_width)
+            .default_width(self.state.layout.left_panel_width)
             .show(ctx, |ui| {
                 let actual = ui.available_width();
-                self.layout.left_panel_width = actual.clamp(MIN_LEFT_PANEL_WIDTH, max_width);
+                self.state.layout.left_panel_width = actual.clamp(MIN_LEFT_PANEL_WIDTH, max_width);
 
                 ui.vertical(|ui| {
                     self.show_language_selector(ui);
@@ -107,18 +67,21 @@ impl UiApp {
             let rect = ui.max_rect();
 
             // 代码编辑器
-            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| self.editor.ui(ui));
+            ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                self.state.editor_panel.ui(ui)
+            });
 
             // 不点击按钮终端就不展开
-            if !self.layout.terminal_visible {
+            if !self.state.layout.terminal_visible {
                 return;
             }
 
             // 终端位置
             let min_h = MIN_TERMINAL_HEIGHT;
             let max_h = rect.height() - 40.0;
-            self.layout.terminal_height = self.layout.terminal_height.clamp(min_h, max_h);
-            let terminal_top = rect.bottom() - self.layout.terminal_height;
+            self.state.layout.terminal_height =
+                self.state.layout.terminal_height.clamp(min_h, max_h);
+            let terminal_top = rect.bottom() - self.state.layout.terminal_height;
             let terminal_rect =
                 egui::Rect::from_min_max(egui::pos2(rect.left(), terminal_top), rect.max);
 
@@ -150,22 +113,24 @@ impl UiApp {
             if response.dragged() {
                 let delta = response.drag_delta().y;
 
-                let new_height = (self.layout.terminal_height - delta).clamp(min_h, max_h);
+                let new_height = (self.state.layout.terminal_height - delta).clamp(min_h, max_h);
 
                 // 达到最小或最大时，完全锁死
-                if new_height != self.layout.terminal_height {
-                    self.layout.terminal_height = new_height;
+                if new_height != self.state.layout.terminal_height {
+                    self.state.layout.terminal_height = new_height;
                 }
             }
 
             // 终端
             ui.scope_builder(UiBuilder::new().max_rect(terminal_rect), |ui| {
-                self.terminal.ui(ui)
+                self.state.terminal_panel.ui(ui)
             });
 
-            if let Some(input) = self.terminal.take_input() {
-                self.terminal.push_output(format!("> {}", input));
-                self.run_with_input(&input);
+            if let Some(input) = self.state.terminal_panel.take_input() {
+                self.state
+                    .terminal_panel
+                    .push_output(format!("> {}", input));
+                AppController::run_with_input(&self.state, &input);
             }
         });
     }
@@ -174,7 +139,7 @@ impl UiApp {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("☰").clicked() {
-                    self.layout.show_left_panel = !self.layout.show_left_panel;
+                    self.state.layout.show_left_panel = !self.state.layout.show_left_panel;
                 }
 
                 ui.heading("EsolangIDE");
@@ -182,7 +147,7 @@ impl UiApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // 展开终端按钮
                     if ui.button("🖥").clicked() {
-                        self.layout.terminal_visible = !self.layout.terminal_visible;
+                        self.state.layout.terminal_visible = !self.state.layout.terminal_visible;
                     }
 
                     self.show_load_file_button(ui);
@@ -199,12 +164,14 @@ impl UiApp {
             {
                 match std::fs::read_to_string(&path) {
                     Ok(content) => {
-                        self.editor.set_text(&content);
-                        self.terminal
+                        self.state.editor_panel.set_text(&content);
+                        self.state
+                            .terminal_panel
                             .push_output(format!("Loaded file: {}", path.display()));
                     }
                     Err(e) => {
-                        self.terminal
+                        self.state
+                            .terminal_panel
                             .push_output(format!("Error loading file: {}", e));
                     }
                 }
@@ -217,13 +184,14 @@ impl UiApp {
             ui.set_min_width(ui.available_width());
             ui.label("Language:");
 
-            let old_language = self.selected_language.clone();
-            let mut current_language = self.selected_language.clone();
+            let old_language = self.state.selected_language.clone();
+            let mut current_language = self.state.selected_language.clone();
 
             let selected_text = current_language
                 .as_ref()
                 .and_then(|lang_id| {
-                    self.available_languages
+                    self.state
+                        .available_languages
                         .iter()
                         .find(|(id, _)| id == lang_id)
                         .map(|(_, name)| name.clone())
@@ -234,7 +202,7 @@ impl UiApp {
                 .width(150.0)
                 .selected_text(selected_text)
                 .show_ui(ui, |ui| {
-                    for (lang_id, lang_name) in &self.available_languages {
+                    for (lang_id, lang_name) in &self.state.available_languages {
                         ui.selectable_value(
                             &mut current_language,
                             Some(lang_id.clone()),
@@ -244,18 +212,13 @@ impl UiApp {
                 });
 
             if current_language != old_language {
-                self.selected_language = current_language;
-                self.update_interpreter();
+                self.state.selected_language = current_language;
+                AppController::update_interpreter(
+                    &self.state,
+                    self.state.selected_language.as_ref(),
+                );
             }
         });
-    }
-
-    fn update_interpreter(&mut self) {
-        let new_interp = Self::create_interpreter(&self.config, self.selected_language.as_ref());
-        let _ = self
-            .worker
-            .to_worker
-            .send(ToWorkerMsg::UpdateInterpreter(new_interp));
     }
 
     fn show_controls(&mut self, ui: &mut egui::Ui) {
@@ -309,7 +272,7 @@ impl UiApp {
         }
 
         if debug_clicked {
-            self.start_debug_session();
+            AppController::start_debug_session(&self.state);
         }
 
         if step_clicked {
@@ -326,51 +289,46 @@ impl UiApp {
     }
 
     fn run_code(&mut self) {
-        self.terminal.push_output("Please input:");
-        self.terminal.request_input();
-    }
-
-    fn start_debug_session(&mut self) {
-        let code = self.editor.get_text();
-        let _ = self.worker.to_worker.send(ToWorkerMsg::StartDebug(code));
+        self.state.terminal_panel.push_output("Please input:");
+        self.state.terminal_panel.request_input();
     }
 
     fn step_debug(&mut self) {
-        if let Some(session) = self.debug_session.as_mut() {
+        if let Some(session) = self.state.debug_session.as_mut() {
             match session.step() {
                 Ok(state) => {
-                    self.last_debug_state = Some(state);
+                    self.state.last_debug_state = Some(state);
                 }
                 Err(e) => {
-                    self.last_run_output = format!("Step error: {}", e);
+                    self.state.last_run_output = format!("Step error: {}", e);
                 }
             }
         }
     }
 
     fn resume_debug(&mut self) {
-        if let Some(session) = self.debug_session.as_mut() {
-            match session.resume_until_breakpoint(&self.bp_manager.breakpoints()) {
+        if let Some(session) = self.state.debug_session.as_mut() {
+            match session.resume_until_breakpoint(&self.state.bp_panel.breakpoints()) {
                 Ok(state) => {
-                    self.last_debug_state = Some(state);
+                    self.state.last_debug_state = Some(state);
                 }
                 Err(e) => {
-                    self.last_run_output = format!("Resume error: {}", e);
+                    self.state.last_run_output = format!("Resume error: {}", e);
                 }
             }
         }
     }
 
     fn stop_debug(&mut self) {
-        self.debug_session = None;
-        self.last_debug_state = None;
+        self.state.debug_session = None;
+        self.state.last_debug_state = None;
     }
 
     fn show_debug_state(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.set_min_width(ui.available_width());
             ui.label("Debug State (JSON)");
-            if let Some(state) = &self.last_debug_state {
+            if let Some(state) = &self.state.last_debug_state {
                 let mut s = serde_json::to_string_pretty(&state.info)
                     .unwrap_or_else(|_| "<failed to serialize>".to_string());
                 ui.add_sized(
@@ -384,60 +342,6 @@ impl UiApp {
     }
 
     fn show_breakpoints(&mut self, ui: &mut egui::Ui) {
-        self.bp_manager.ui(ui);
-    }
-
-    // fn show_editor(&mut self, ui: &mut egui::Ui) {
-    //     ui.group(|ui| {
-    //         ui.label("Editor");
-    //         let available_height = ui.available_height() - 180.0;
-    //         ui.vertical(|ui| {
-    //             ui.set_height(available_height.max(100.0));
-    //             self.editor.ui(ui);
-    //         });
-    //     });
-    // }
-
-    fn run_with_input(&mut self, input: &str) {
-        let req = RunRequest {
-            code: self.editor.get_text(),
-            input: input.into(),
-        };
-
-        let _ = self.worker.to_worker.send(ToWorkerMsg::Run(req));
-    }
-
-    /// 接收工作线程执行结果，并处理消息
-    fn recv_from_worker(&mut self) {
-        while let Ok(msg) = self.worker.from_worker.try_recv() {
-            match msg {
-                FromWorkerMsg::RunFinished(result) => {
-                    self.terminal
-                        .push_output(String::from_utf8_lossy(&result.stdout).to_string());
-                }
-                FromWorkerMsg::RunError(err) => {
-                    self.terminal.push_output(format!("Run error: {}", err));
-                }
-                FromWorkerMsg::DebugStarted(session) => match session {
-                    Ok(session) => {
-                        self.debug_session = Some(session);
-                        self.last_debug_state =
-                            self.debug_session.as_ref().map(|s| s.current_state());
-                    }
-                    Err(e) => {
-                        self.last_run_output = format!("Start debug error: {}", e);
-                    }
-                },
-                FromWorkerMsg::InterpreterUpdated => {
-                    self.terminal.push_output(format!(
-                        "The interpreter has been changed to: {}.",
-                        self.selected_language.clone().unwrap() // 这里的Option一定是Some
-                    ));
-                }
-                FromWorkerMsg::WorkerShutdown => {
-                    todo!() // TODO: 处理工作线程返回消息
-                }
-            }
-        }
+        self.state.bp_panel.ui(ui);
     }
 }

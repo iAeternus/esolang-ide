@@ -1,7 +1,7 @@
 use crate::core::{DebugSessionBox, InterpreterBox, RunRequest, RunResult};
 use anyhow::Result;
 use log::info;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, SendError, Sender, TryRecvError, channel};
 
 // #[derive(Debug)]
 pub enum ToWorkerMsg {
@@ -64,6 +64,14 @@ impl WorkerHandle {
             to_worker: tx_worker,
             from_worker: rx_ui,
         }
+    }
+
+    pub fn send_to(&self, msg: ToWorkerMsg) -> Result<(), SendError<ToWorkerMsg>> {
+        self.to_worker.send(msg)
+    }
+
+    pub fn try_recv_from(&self) -> Result<FromWorkerMsg, TryRecvError> {
+        self.from_worker.try_recv()
     }
 }
 

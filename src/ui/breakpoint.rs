@@ -3,12 +3,12 @@ use std::collections::BTreeSet;
 use crate::core::CodeLine;
 
 #[derive(Default)]
-pub struct BreakpointManager {
+pub struct BreakpointPanel {
     breakpoints: BTreeSet<CodeLine>,
     add_input: String,
 }
 
-impl BreakpointManager {
+impl BreakpointPanel {
     pub fn new() -> Self {
         Self {
             breakpoints: BTreeSet::new(),
