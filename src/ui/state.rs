@@ -2,8 +2,8 @@ use crate::{
     ExtInterpreterConfig,
     core::{DebugSession, DebugState, ExternalInterpreter, WorkerHandle},
     ui::{
-        breakpoint::BreakpointPanel, editor::EditorPanel, layout::LayoutState,
-        terminal::TerminalPanel,
+        layout::LayoutState,
+        panels::{BreakpointPanel, EditorPanel, TerminalPanel},
     },
 };
 

@@ -1,6 +1,4 @@
-mod breakpoint;
-mod editor;
-mod terminal;
+mod panels;
 mod layout;
 mod app;
 mod controller;

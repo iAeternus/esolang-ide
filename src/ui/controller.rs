@@ -44,14 +44,6 @@ impl AppController {
         }
     }
 
-    // pub fn spawn_worker(config: &ExtInterpreterConfig) -> WorkerHandle {
-    //     let available_languages = config.available_languages();
-    //     let default_language = available_languages.get(0).map(|(id, _)| id.clone());
-    //     let initial_interp =
-    //         ExternalInterpreter::with_language_id(&config, default_language.as_ref());
-    //     WorkerHandle::spawn(Box::new(initial_interp))
-    // }
-
     pub fn update_interpreter(state: &AppState, language_id: Option<&String>) {
         let new_interp = ExternalInterpreter::with_language_id(&state.config, language_id);
         let _ = state
