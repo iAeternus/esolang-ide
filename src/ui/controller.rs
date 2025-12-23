@@ -1,6 +1,5 @@
 use crate::{
-    ExtInterpreterConfig,
-    core::{ExternalInterpreter, FromWorkerMsg, RunRequest, ToWorkerMsg, WorkerHandle},
+    core::{ExternalInterpreter, FromWorkerMsg, RunRequest, ToWorkerMsg},
     ui::state::AppState,
 };
 

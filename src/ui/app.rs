@@ -1,16 +1,9 @@
 use crate::{
     ExtInterpreterConfig, MIN_LEFT_PANEL_WIDTH, MIN_TERMINAL_HEIGHT,
-    core::{
-        DebugSession, DebugState, ExternalInterpreter, FromWorkerMsg, Interpreter, RunRequest,
-        ToWorkerMsg, WorkerHandle,
-    },
-    ui::{
-        breakpoint::BreakpointPanel, controller::AppController, editor::EditorPanel,
-        layout::LayoutState, state::AppState, terminal::TerminalPanel,
-    },
+    ui::{controller::AppController, state::AppState},
 };
 use eframe::egui;
-use egui::{UiBuilder, scroll_area::State};
+use egui::UiBuilder;
 
 pub struct UiApp {
     pub state: AppState,
@@ -51,13 +44,13 @@ impl UiApp {
                 self.state.layout.left_panel_width = actual.clamp(MIN_LEFT_PANEL_WIDTH, max_width);
 
                 ui.vertical(|ui| {
-                    self.show_language_selector(ui);
+                    self.draw_language_selector(ui);
                     ui.separator();
-                    self.show_controls(ui);
+                    self.draw_controls(ui);
                     ui.separator();
-                    self.show_debug_state(ui);
+                    self.draw_debug_state(ui);
                     ui.separator();
-                    self.show_breakpoints(ui);
+                    self.draw_breakpoints(ui);
                 });
             });
     }
@@ -150,13 +143,13 @@ impl UiApp {
                         self.state.layout.terminal_visible = !self.state.layout.terminal_visible;
                     }
 
-                    self.show_load_file_button(ui);
+                    self.draw_load_file_button(ui);
                 });
             });
         });
     }
 
-    fn show_load_file_button(&mut self, ui: &mut egui::Ui) {
+    fn draw_load_file_button(&mut self, ui: &mut egui::Ui) {
         if ui.button("Load File").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("All files", &["*"])
@@ -179,7 +172,7 @@ impl UiApp {
         }
     }
 
-    fn show_language_selector(&mut self, ui: &mut egui::Ui) {
+    fn draw_language_selector(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.set_min_width(ui.available_width());
             ui.label("Language:");
@@ -221,7 +214,7 @@ impl UiApp {
         });
     }
 
-    fn show_controls(&mut self, ui: &mut egui::Ui) {
+    fn draw_controls(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.set_min_width(ui.available_width());
             ui.label("Controls");
@@ -324,7 +317,7 @@ impl UiApp {
         self.state.last_debug_state = None;
     }
 
-    fn show_debug_state(&mut self, ui: &mut egui::Ui) {
+    fn draw_debug_state(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
             ui.set_min_width(ui.available_width());
             ui.label("Debug State (JSON)");
@@ -341,7 +334,7 @@ impl UiApp {
         });
     }
 
-    fn show_breakpoints(&mut self, ui: &mut egui::Ui) {
+    fn draw_breakpoints(&mut self, ui: &mut egui::Ui) {
         self.state.bp_panel.ui(ui);
     }
 }

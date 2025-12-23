@@ -1,10 +1,9 @@
-use eframe::App;
-
 use crate::{
     ExtInterpreterConfig,
     core::{DebugSession, DebugState, ExternalInterpreter, WorkerHandle},
     ui::{
-        breakpoint::BreakpointPanel, controller::AppController, editor::EditorPanel, layout::LayoutState, terminal::TerminalPanel
+        breakpoint::BreakpointPanel, editor::EditorPanel, layout::LayoutState,
+        terminal::TerminalPanel,
     },
 };
 
@@ -29,7 +28,8 @@ impl AppState {
     pub fn new(config: ExtInterpreterConfig) -> Self {
         let available_languages = config.available_languages();
         let default_language = available_languages.get(0).map(|(id, _)| id.clone());
-        let initial_interp = ExternalInterpreter::with_language_id(&config, default_language.as_ref());
+        let initial_interp =
+            ExternalInterpreter::with_language_id(&config, default_language.as_ref());
         let worker = WorkerHandle::spawn(Box::new(initial_interp));
 
         Self {
