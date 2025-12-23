@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::core::CodeLine;
 
+#[derive(Default)]
 pub struct BreakpointManager {
     breakpoints: BTreeSet<CodeLine>,
     add_input: String,

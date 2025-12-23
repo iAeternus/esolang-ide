@@ -1180,6 +1180,7 @@ dependencies = [
  "egui",
  "egui_code_editor",
  "encoding_rs",
+ "log",
  "rfd",
  "serde",
  "serde_json",

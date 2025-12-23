@@ -42,17 +42,19 @@ pub trait Interpreter: Send + Sync {
     ///
     /// ## Return
     /// 返回运行结果，用Result包装
-    fn run(&mut self, req: RunRequest) -> Result<RunResult>;
+    fn run(&mut self, req: &RunRequest) -> Result<RunResult>;
 
-    /// 开始调试
+    /// 开始调试 TODO: 该接口方法需重新设计
     ///
     /// ## Params
     /// - code: 代码
     ///
     /// ## Return
     /// 返回Debug会话，用Result封装
-    fn start_debug(&mut self, code: String) -> Result<Box<dyn DebugSession + Send + Sync>>;
+    fn start_debug(&mut self, code: String) -> Result<DebugSessionBox>;
 }
+
+pub type InterpreterBox = Box<dyn Interpreter + Send + Sync>;
 
 /// Debug会话接口
 pub trait DebugSession: Send + Sync {
@@ -84,6 +86,8 @@ pub trait DebugSession: Send + Sync {
     /// false = 程序仍可继续执行
     fn is_terminated(&self) -> bool;
 }
+
+pub type DebugSessionBox = Box<dyn DebugSession + Send + Sync>;
 
 /// Debug状态
 #[derive(Debug, Clone, Default)]
