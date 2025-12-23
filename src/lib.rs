@@ -1,6 +1,5 @@
 mod core;
 mod ui;
-mod utils;
 mod config;
 mod constants;
 

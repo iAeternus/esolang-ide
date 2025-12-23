@@ -40,10 +40,6 @@ impl ExternalInterpreter {
 
 impl Interpreter for ExternalInterpreter {
     fn run(&mut self, req: &RunRequest) -> Result<RunResult> {
-        // // 代码临时文件
-        // let code_path = create_temp_file_with_content(req.code.as_bytes())?;
-        // // 输入临时文件
-        // let input_path = create_temp_file_with_content(&req.input)?;
         // 代码临时文件
         let mut code_file = NamedTempFile::new()?;
         code_file.write_all(req.code.as_bytes())?;
@@ -81,12 +77,6 @@ impl Interpreter for ExternalInterpreter {
     fn start_debug(&mut self, _code: String) -> Result<Box<dyn DebugSession + Send + Sync>> {
         anyhow::bail!("Debug not implemented for external interpreter yet")
     }
-}
-
-fn create_temp_file_with_content<C: AsRef<[u8]>>(content: C) -> Result<String> {
-    let mut temp_file = NamedTempFile::new()?;
-    temp_file.write_all(content.as_ref())?;
-    Ok(temp_file.path().to_string_lossy().to_string())
 }
 
 fn spawn_process(exe: &str, code: &str, input: &str) -> Result<std::process::Child> {
